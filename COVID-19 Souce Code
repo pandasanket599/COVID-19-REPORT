@@ -1,0 +1,77 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import plotly.express as px
+
+# URLs for the datasets
+base_url = "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/"
+confirmed_url = base_url + "time_series_covid19_confirmed_global.csv"
+deaths_url = base_url + "time_series_covid19_deaths_global.csv"
+recovered_url = base_url + "time_series_covid19_recovered_global.csv"
+
+# Load data
+confirmed = pd.read_csv(confirmed_url)
+deaths = pd.read_csv(deaths_url)
+recovered = pd.read_csv(recovered_url)
+
+# Drop Lat, Long and group by Country
+def preprocess(df, value_name):
+    df = df.drop(columns=['Lat', 'Long', 'Province/State'])
+    df = df.groupby('Country/Region').sum().reset_index()
+    df = df.melt(id_vars=['Country/Region'], var_name='Date', value_name=value_name)
+    df['Date'] = pd.to_datetime(df['Date'])
+    return df
+
+# Preprocess each dataset
+confirmed_long = preprocess(confirmed, 'Confirmed')
+deaths_long = preprocess(deaths, 'Deaths')
+recovered_long = preprocess(recovered, 'Recovered')
+
+# Merge all into a single DataFrame
+merged = confirmed_long.merge(deaths_long, on=['Country/Region', 'Date'])
+merged = merged.merge(recovered_long, on=['Country/Region', 'Date'])
+
+# Plot 1: Global Total Line Chart
+global_trend = merged.groupby("Date")[["Confirmed", "Deaths", "Recovered"]].sum().reset_index()
+
+plt.figure(figsize=(12,6))
+plt.plot(global_trend["Date"], global_trend["Confirmed"], label="Confirmed", color="blue")
+plt.plot(global_trend["Date"], global_trend["Deaths"], label="Deaths", color="red")
+plt.plot(global_trend["Date"], global_trend["Recovered"], label="Recovered", color="green")
+plt.title("Global Cumulative COVID-19 Cases")
+plt.xlabel("Date")
+plt.ylabel("Cases")
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+# Plot 2: Country Comparison - Line Chart (Top 5 Countries)
+top_countries = merged.groupby("Country/Region")["Confirmed"].max().sort_values(ascending=False).head(5).index
+plt.figure(figsize=(12,6))
+for country in top_countries:
+    country_data = merged[merged["Country/Region"] == country]
+    plt.plot(country_data["Date"], country_data["Confirmed"], label=country)
+plt.title("Top 5 Countries - Confirmed Cases Over Time")
+plt.xlabel("Date")
+plt.ylabel("Confirmed Cases")
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+# Plot 3: Heatmap - Daily New Cases for Top 5 Countries
+daily_new = merged.copy()
+daily_new.sort_values(['Country/Region', 'Date'], inplace=True)
+daily_new['New Cases'] = daily_new.groupby('Country/Region')['Confirmed'].diff().fillna(0)
+
+heat_data = daily_new[daily_new['Country/Region'].isin(top_countries)]
+heat_pivot = heat_data.pivot(index='Country/Region', columns='Date', values='New Cases')
+
+plt.figure(figsize=(14,5))
+sns.heatmap(heat_pivot, cmap='YlOrRd', linewidths=0.5)
+plt.title("Heatmap: Daily New Confirmed Cases (Top 5 Countries)")
+plt.xlabel("Date")
+plt.ylabel("Country")
+plt.tight_layout()
+plt.show()
